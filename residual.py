@@ -16,7 +16,7 @@ import torchvision.datasets as dset
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # Hyper-parameters
-num_epochs = 80
+num_epochs = 10
 batch_size = 100
 learning_rate = 0.001
 
@@ -29,16 +29,16 @@ transform = transforms.Compose([
 
 # CIFAR-10 dataset
 train_dataset =dset.ImageFolder(root="train/",transform=transforms.Compose([
-                               transforms.Scale(32),       # 한 축을 128로 조절하고
-                               transforms.CenterCrop(32),  # square를 한 후,
+                               transforms.Scale(128),       # 한 축을 128로 조절하고
+                               transforms.CenterCrop(128),  # square를 한 후,
                                transforms.ToTensor(),       # Tensor로 바꾸고 (0~1로 자동으로 normalize)
                                transforms.Normalize((0.5, 0.5, 0.5),  # -1 ~ 1 사이로 normalize
                                                     (0.5, 0.5, 0.5)), # (c - m)/s 니까...
                            ]))
 
 test_dataset = dset.ImageFolder(root="test/",transform=transforms.Compose([
-                               transforms.Scale(32),       # 한 축을 128로 조절하고
-                               transforms.CenterCrop(32),  # square를 한 후,
+                               transforms.Scale(128),       # 한 축을 128로 조절하고
+                               transforms.CenterCrop(128),  # square를 한 후,
                                transforms.ToTensor(),       # Tensor로 바꾸고 (0~1로 자동으로 normalize)
                                transforms.Normalize((0.5, 0.5, 0.5),  # -1 ~ 1 사이로 normalize
                                                     (0.5, 0.5, 0.5)), # (c - m)/s 니까...
@@ -83,7 +83,7 @@ class ResidualBlock(nn.Module):
 
 # ResNet
 class ResNet(nn.Module):
-    def __init__(self, block, layers, num_classes=5):
+    def __init__(self, block, layers, num_classes=2):
         super(ResNet, self).__init__()
         self.in_channels = 16
         self.conv = conv3x3(3, 16)
@@ -93,7 +93,7 @@ class ResNet(nn.Module):
         self.layer2 = self.make_layer(block, 32, layers[1], 2)
         self.layer3 = self.make_layer(block, 64, layers[2], 2)
         self.avg_pool = nn.AvgPool2d(8)
-        self.fc = nn.Linear(64, num_classes)
+        self.fc = nn.Linear(1024, num_classes)
         
     def make_layer(self, block, out_channels, blocks, stride=1):
         downsample = None
@@ -109,15 +109,25 @@ class ResNet(nn.Module):
         return nn.Sequential(*layers)
     
     def forward(self, x):
+        #print("1:",x.shape)
         out = self.conv(x)
+        #print("2:",out.shape)
         out = self.bn(out)
+        #print("3:",out.shape)
         out = self.relu(out)
+        #print("4:",out.shape)
         out = self.layer1(out)
+        #print("5:",out.shape)
         out = self.layer2(out)
+        #print("6:",out.shape)
         out = self.layer3(out)
+        #print("7:",out.shape)
         out = self.avg_pool(out)
+        #print("8:",out.shape)
         out = out.view(out.size(0), -1)
+        #print("9:",out.shape)
         out = self.fc(out)
+        #print("10:",out.shape)
         return out
     
 model = ResNet(ResidualBlock, [2, 2, 2]).to(device)
@@ -136,6 +146,7 @@ def update_lr(optimizer, lr):
 total_step = len(train_loader)
 curr_lr = learning_rate
 for epoch in range(num_epochs):
+    print("epoch : ",epoch)
     for i, (images, labels) in enumerate(train_loader):
         images = images.to(device)
         labels = labels.to(device)
@@ -149,29 +160,14 @@ for epoch in range(num_epochs):
         loss.backward()
         optimizer.step()
         
-        if (i+1) % 100 == 0:
+        if (i+1) % 10 == 0:
             print ("Epoch [{}/{}], Step [{}/{}] Loss: {:.4f}"
                    .format(epoch+1, num_epochs, i+1, total_step, loss.item()))
+            torch.save(model.state_dict(), 'resnet.ckpt')
 
     # Decay learning rate
     if (epoch+1) % 20 == 0:
         curr_lr /= 3
         update_lr(optimizer, curr_lr)
 
-# Test the model
-model.eval()
-with torch.no_grad():
-    correct = 0
-    total = 0
-    for images, labels in test_loader:
-        images = images.to(device)
-        labels = labels.to(device)
-        outputs = model(images)
-        _, predicted = torch.max(outputs.data, 1)
-        total += labels.size(0)
-        correct += (predicted == labels).sum().item()
 
-    print('Accuracy of the model on the test images: {} %'.format(100 * correct / total))
-
-# Save the model checkpoint
-torch.save(model.state_dict(), 'resnet.ckpt')
